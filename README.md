@@ -8,20 +8,20 @@
 
 | # | Document | Description |
 |---|----------|-------------|
-| 1 | [Requirements](./01-requirements.md) | Functional, non-functional requirements and constraints |
-| 2 | [Core Entities](./02-core-entities.md) | Domain model, data schema, ER diagram |
-| 3 | [API Design](./03-api-design.md) | REST endpoints, request/response contracts |
-| 4 | [High-Level Design](./04-high-level-design.md) | Architecture overview, components, technology choices |
-| 5 | [Deep Dives](./05-deep-dives.md) | Concurrency, availability algorithm, indexing, observability |
+| 1 | [Requirements](./docs/system-design/01-requirements.md) | Functional, non-functional requirements and constraints |
+| 2 | [Core Entities](./docs/system-design/02-core-entities.md) | Domain model, data schema, ER diagram |
+| 3 | [API Design](./docs/system-design/03-api-design.md) | REST endpoints, request/response contracts |
+| 4 | [High-Level Design](./docs/system-design/04-high-level-design.md) | Architecture overview, components, technology choices |
+| 5 | [Deep Dives](./docs/system-design/05-deep-dives.md) | Concurrency, availability algorithm, indexing, observability |
 
 ## Diagrams
 
 | Diagram | Description |
 |---------|-------------|
-| [Architecture](./diagrams/01-architecture.md) | System component diagram |
-| [Entity Relationship](./diagrams/02-entity-relationship.md) | Data model ER diagram |
-| [Booking Flow](./diagrams/03-booking-flow.md) | End-to-end sequence diagram |
-| [Availability Check](./diagrams/04-availability-check.md) | Decision flowchart |
+| [Architecture](./docs/system-design/diagrams/01-architecture.md) | System component diagram |
+| [Entity Relationship](./docs/system-design/diagrams/02-entity-relationship.md) | Data model ER diagram |
+| [Booking Flow](./docs/system-design/diagrams/03-booking-flow.md) | End-to-end sequence diagram |
+| [Availability Check](./docs/system-design/diagrams/04-availability-check.md) | Decision flowchart |
 
 ---
 
