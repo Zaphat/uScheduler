@@ -50,8 +50,8 @@ class AuthService:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         token = create_access_token({
             "sub": customer.id,
-            "role": "CUSTOMER",
-            "dealership_id": None,
+            "role": customer.role,
+            "dealership_id": customer.dealership_id,
             "exp": int(expire.timestamp()),
             "iat": int(datetime.now(timezone.utc).timestamp()),
         })

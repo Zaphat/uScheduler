@@ -77,6 +77,7 @@ async def seed_data(db_session: AsyncSession):
         name="Oil Change",
         duration_minutes=60,
         required_skills=["oil"],
+        dealership_id="d-test-01",
     )
     bay = ServiceBay(id="bay-01", dealership_id="d-test-01", label="Bay 1")
     tech = Technician(id="tech-01", dealership_id="d-test-01", name="Alice", skills=["oil", "tyres"])

@@ -38,6 +38,7 @@ async def seed():
             description="Full synthetic oil change with filter replacement.",
             duration_minutes=60,
             required_skills=["oil"],
+            dealership_id=d.id,
         )
         tyre = ServiceType(
             id="s0000000-0000-0000-0000-000000000002",
@@ -45,6 +46,7 @@ async def seed():
             description="Rotate all four tyres.",
             duration_minutes=45,
             required_skills=["tyres"],
+            dealership_id=d.id,
         )
         engine_svc = ServiceType(
             id="s0000000-0000-0000-0000-000000000003",
@@ -52,6 +54,7 @@ async def seed():
             description="Full engine inspection and overhaul.",
             duration_minutes=240,
             required_skills=["engine", "electrical"],
+            dealership_id=d.id,
         )
         session.add_all([oil, tyre, engine_svc])
 

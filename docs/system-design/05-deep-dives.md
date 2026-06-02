@@ -194,29 +194,23 @@ for each slot in candidate_slots:
     yield slot
 ```
 
-This runs as a single DB query using a `generate_series` approach in PostgreSQL to avoid
-N+1 round trips:
+This runs in **3 database queries** followed by in-process filtering to avoid N+1 round trips:
 
-```sql
-WITH slots AS (
-  SELECT generate_series(
-    ($1::date + $2::time)::timestamptz,   -- opening time
-    ($1::date + $3::time)::timestamptz - ($4 || ' minutes')::interval,
-    ($4 || ' minutes')::interval           -- slot duration
-  ) AS slot_start
-),
-occupied_bays AS (
-  SELECT DISTINCT service_bay_id, scheduled_start
-  FROM   appointments
-  WHERE  dealership_id = $5
-    AND  status = 'CONFIRMED'
-    AND  scheduled_start::date = $1
-),
-...
-SELECT slot_start
-FROM   slots
-WHERE  <bay_and_tech_available_conditions>;
+1. Fetch all active bays for the dealership
+2. Fetch all active technicians for the dealership
+3. Fetch all CONFIRMED appointments overlapping the full operating day
+
+Candidate slots are then iterated in Python, and each slot is tested by computing the set of occupied bays and technicians from the pre-fetched appointments:
+
+```python
+for each slot in candidate_slots:
+    occupied_bays  = {a.service_bay_id  for a in day_appointments if overlaps(a, slot)}
+    occupied_techs = {a.technician_id   for a in day_appointments if overlaps(a, slot)}
+    if (bay_ids - occupied_bays) and (qualified_tech_ids - occupied_techs):
+        yield slot
 ```
+
+This is O(slots × appointments) per request but avoids repeated round trips to the database.
 
 Result is cached in Redis for 60 seconds per `(dealership_id, service_type_id, date)`
 key to absorb read spikes without hitting the DB.

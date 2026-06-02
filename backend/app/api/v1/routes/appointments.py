@@ -35,7 +35,7 @@ async def create_appointment(
     payload: AppointmentCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_customer),
-    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+    x_idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     service = BookingService(db)
     appt = await service.create_appointment(

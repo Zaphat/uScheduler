@@ -182,7 +182,7 @@ class BookingService:
             scheduled = scheduled.replace(tzinfo=timezone.utc)
         if scheduled <= now:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": {"code": "PAST_APPOINTMENT", "message": "Cannot cancel a past appointment.", "details": {}}},
             )
         appt.status = "CANCELLED"

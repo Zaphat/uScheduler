@@ -53,6 +53,8 @@ class Customer(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(20))
     password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20), default="CUSTOMER")
+    dealership_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("dealerships.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     vehicles: Mapped[list["Vehicle"]] = relationship(back_populates="customer")
@@ -93,6 +95,7 @@ class ServiceType(Base):
     __tablename__ = "service_types"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    dealership_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("dealerships.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str | None] = mapped_column(Text)
     duration_minutes: Mapped[int] = mapped_column(Integer)

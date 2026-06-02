@@ -205,6 +205,7 @@ class ReferenceRepository:
         return list(result.scalars().all())
 
     async def list_service_types_for_dealership(self, dealership_id: str) -> list[ServiceType]:
-        # All service types (not scoped to dealership in this schema version)
-        result = await self.session.execute(select(ServiceType))
+        result = await self.session.execute(
+            select(ServiceType).where(ServiceType.dealership_id == dealership_id)
+        )
         return list(result.scalars().all())

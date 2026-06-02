@@ -17,7 +17,7 @@ Customer ──owns──► Vehicle
 ## 2. Entity Definitions
 
 ### Customer
-Represents an end user who owns vehicles and makes appointments.
+Represents an end user who owns vehicles and makes appointments. Staff and Admin users are also stored in this table, differentiated by the `role` field.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -26,6 +26,8 @@ Represents an end user who owns vehicles and makes appointments.
 | `email` | VARCHAR(255) | Unique, used for login and notifications |
 | `phone` | VARCHAR(20) | E.164 format, used for SMS notifications |
 | `password_hash` | VARCHAR(255) | bcrypt hash, never returned in API responses |
+| `role` | VARCHAR(20) | `CUSTOMER` (default) \| `STAFF` \| `ADMIN` |
+| `dealership_id` | UUID FK → Dealership (nullable) | Set for `STAFF` users; null for `CUSTOMER` / `ADMIN` |
 | `created_at` | TIMESTAMPTZ | |
 
 ---
@@ -60,11 +62,12 @@ A physical service location with bays and technicians.
 ---
 
 ### ServiceType
-A catalogue of services offered, each with a fixed duration and required technician skills.
+A catalogue of services offered **by a specific dealership**, each with a fixed duration and required technician skills.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | UUID PK | |
+| `dealership_id` | UUID FK → Dealership | |
 | `name` | VARCHAR(100) | e.g. "Full Engine Overhaul" |
 | `description` | TEXT | |
 | `duration_minutes` | INT | Fixed service duration |
