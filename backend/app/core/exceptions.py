@@ -21,9 +21,9 @@ class SlotTakenError(HTTPException):
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": {
-                    "code": "SLOT_TAKEN",
+                    "code": "SLOT_UNAVAILABLE",
                     "message": "A concurrent request won this slot. Please retry.",
-                    "details": {},
+                    "details": {"reason": "LOCK_CONTENTION"},
                 }
             },
         )

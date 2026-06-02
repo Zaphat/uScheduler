@@ -47,15 +47,25 @@ class TestWithinHours:
 # ── _slot_key ──────────────────────────────────────────────────────────────
 
 class TestSlotKey:
-    def test_same_bucket_for_nearby_times(self):
-        t1 = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
-        t2 = datetime(2026, 6, 15, 9, 14, tzinfo=timezone.utc)
-        assert _slot_key(t1, 60) == _slot_key(t2, 60)
+    def test_same_datetime_produces_same_key(self):
+        t = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+        assert _slot_key(t) == _slot_key(t)
 
-    def test_different_bucket_for_different_slots(self):
+    def test_same_15min_bucket_produces_same_key(self):
+        # 09:00 and 09:07 both fall in the 09:00 bucket
+        t1 = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+        t2 = datetime(2026, 6, 15, 9, 7, tzinfo=timezone.utc)
+        assert _slot_key(t1) == _slot_key(t2)
+
+    def test_different_bucket_produces_different_key(self):
+        # 09:00 → bucket 09:00; 09:15 → bucket 09:15
         t1 = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
         t2 = datetime(2026, 6, 15, 9, 15, tzinfo=timezone.utc)
-        assert _slot_key(t1, 60) != _slot_key(t2, 60)
+        assert _slot_key(t1) != _slot_key(t2)
+
+    def test_key_format_is_utc_15min_bucket_precision(self):
+        t = datetime(2026, 6, 15, 9, 30, tzinfo=timezone.utc)
+        assert _slot_key(t) == "20260615T0930"
 
 
 # ── AppointmentCreate validator ────────────────────────────────────────────

@@ -35,6 +35,22 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok"}
 
+    @app.get("/.well-known/jwks.json", tags=["ops"], include_in_schema=False)
+    async def jwks():
+        """Expose the RSA public key in JWK Set format for JWT authorizers (e.g. API Gateway)."""
+        if settings.ALGORITHM != "RS256":
+            return {"keys": []}
+        pub_pem = settings.JWT_PUBLIC_KEY or settings.JWT_PRIVATE_KEY
+        if not pub_pem:
+            return {"keys": []}
+        try:
+            from jose import jwk as jose_jwk
+            key = jose_jwk.construct(pub_pem, algorithm="RS256")
+            return {"keys": [key.public_key().to_dict()]}
+        except Exception:
+            log.exception("jwks_construction_failed")
+            return {"keys": []}
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         log.error("unhandled_exception", path=str(request.url), error=str(exc))

@@ -62,12 +62,12 @@ A physical service location with bays and technicians.
 ---
 
 ### ServiceType
-A catalogue of services offered **by a specific dealership**, each with a fixed duration and required technician skills.
+A catalogue of services, each with a fixed duration and required technician skills. Service types may be scoped to a specific dealership or shared globally (nullable dealership).
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | UUID PK | |
-| `dealership_id` | UUID FK → Dealership | |
+| `dealership_id` | UUID FK → Dealership (nullable) | Null = global service type available at all dealerships |
 | `name` | VARCHAR(100) | e.g. "Full Engine Overhaul" |
 | `description` | TEXT | |
 | `duration_minutes` | INT | Fixed service duration |
@@ -117,7 +117,7 @@ The central booking record. Created when both a bay and technician are successfu
 | `technician_id` | UUID FK → Technician | Assigned during booking |
 | `scheduled_start` | TIMESTAMPTZ | Requested by customer |
 | `scheduled_end` | TIMESTAMPTZ | Computed: `scheduled_start + duration_minutes` |
-| `status` | ENUM | `PENDING`, `CONFIRMED`, `CANCELLED`, `COMPLETED` |
+| `status` | ENUM | `CONFIRMED`, `CANCELLED`, `COMPLETED` |
 | `created_at` | TIMESTAMPTZ | |
 | `updated_at` | TIMESTAMPTZ | |
 | `cancelled_at` | TIMESTAMPTZ | Nullable |
@@ -125,15 +125,17 @@ The central booking record. Created when both a bay and technician are successfu
 #### Status Transitions
 
 ```
-             ┌──────────────────────────────────────────────────┐
-             │                                                  │
-  [request]  ▼                                                  │
-  ──────► PENDING ──[resources found]──► CONFIRMED ──[time passes]──► COMPLETED
-              │                               │
-              │ [no resources / error]        │ [customer cancels]
-              ▼                               ▼
-           FAILED                         CANCELLED
+  [request]
+  ──────► CONFIRMED ──[time passes]──► COMPLETED
+               │
+               │ [customer cancels]
+               ▼
+           CANCELLED
 ```
+
+> **Design note**: Booking attempts that fail (no bay, no technician, or concurrent lock
+> collision) are rejected immediately with a `409` response. No record is persisted for
+> failed attempts.
 
 ---
 

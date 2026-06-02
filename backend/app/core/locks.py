@@ -7,6 +7,7 @@ import redis.asyncio as aioredis
 
 from app.core.config import settings
 from app.core.exceptions import SlotTakenError
+from app.core.metrics import redis_lock_acquisitions
 
 _RELEASE_SCRIPT = """
 if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -47,6 +48,12 @@ class LockClient:
     async def acquire(self, key: str) -> bool:
         token = str(uuid.uuid4())
         acquired = await self._redis.set(key, token, nx=True, px=_TTL_MS)
+        # key format: lock:{resource}:{id}:{slot} — extract resource type for label
+        resource = key.split(":")[1] if key.count(":") >= 1 else key
+        redis_lock_acquisitions.labels(
+            resource=resource,
+            result="acquired" if acquired else "failed",
+        ).inc()
         if acquired:
             self._owned[key] = token
         return bool(acquired)

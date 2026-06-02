@@ -92,3 +92,4 @@ Target 99.9 % monthly uptime for the booking API.
 - Parts inventory management
 - Customer-facing rescheduling (cancel + rebook is the supported flow)
 - Multi-tenant SaaS billing
+- Automated `CONFIRMED → COMPLETED` status transition (no background job; completed appointments remain `CONFIRMED` until explicitly managed)

@@ -22,7 +22,7 @@ The ECS task role must have ``secretsmanager:GetSecretValue`` on that secret ARN
 import json
 import os
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -74,7 +74,14 @@ class Settings(BaseSettings):
     REDIS_URL: str
     SECRET_KEY: str
 
-    ALGORITHM: str = "HS256"
+    ALGORITHM: str = "RS256"
+    # RSA key pair for RS256 (PEM strings).  Required in non-local environments when
+    # ALGORITHM=RS256.  JWT_PUBLIC_KEY is optional — python-jose can derive the public
+    # key from the private key for verification, but an explicit public key is used for
+    # the JWKS endpoint so API Gateway can validate tokens without a DB round-trip.
+    JWT_PRIVATE_KEY: str | None = None
+    JWT_PUBLIC_KEY: str | None = None
+
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ENVIRONMENT: str = "local"
     LOG_LEVEL: str = "INFO"
@@ -97,6 +104,21 @@ class Settings(BaseSettings):
                 "SECRET_KEY must be at least 32 characters in non-local environments"
             )
         return v
+
+    @model_validator(mode="after")
+    def rs256_requires_private_key(self) -> "Settings":
+        """Enforce that RS256 mode has an RSA private key in non-local environments."""
+        if (
+            self.ALGORITHM == "RS256"
+            and self.ENVIRONMENT != "local"
+            and not self.TESTING
+            and not self.JWT_PRIVATE_KEY
+        ):
+            raise ValueError(
+                "JWT_PRIVATE_KEY (RSA private key PEM) is required when "
+                "ALGORITHM=RS256 in non-local environments"
+            )
+        return self
 
 
 settings = Settings()

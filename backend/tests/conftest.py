@@ -14,6 +14,7 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-32-bytes-long-xx")
+os.environ.setdefault("ALGORITHM", "HS256")   # RS256 requires RSA keys; tests use HS256
 os.environ.setdefault("TESTING", "true")
 
 from app.db.session import Base
