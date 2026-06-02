@@ -1,0 +1,54 @@
+{
+    "_comment": "ECS Fargate task definition template. Replace ACCOUNT_ID, REGION, ENVIRONMENT before registering. This file is used only for the FIRST deployment of a new environment. Subsequent deploys use ecs-deploy.sh which patches the live task definition.",
+    "family": "uscheduler-api-ENVIRONMENT",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/uscheduler-ecs-execution-ENVIRONMENT",
+    "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/uscheduler-ecs-task-ENVIRONMENT",
+    "containerDefinitions": [
+        {
+            "name": "uscheduler-api",
+            "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/uscheduler-ENVIRONMENT:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8000,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "ENVIRONMENT",
+                    "value": "ENVIRONMENT"
+                },
+                {
+                    "name": "AWS_REGION",
+                    "value": "REGION"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/uscheduler-ENVIRONMENT",
+                    "awslogs-region": "REGION",
+                    "awslogs-stream-prefix": "ecs",
+                    "awslogs-create-group": "true"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8000/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 15
+            }
+        }
+    ]
+}

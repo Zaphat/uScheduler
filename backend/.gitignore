@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg-link
+
+# Virtual environments
+.venv/
+venv/
+env/
+env3*/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+
+# Type checkers & linters
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# Editors
+.idea/
+.vscode/
+*.sw?
+*~
+
+# Environment / secrets
+.env
+.env.*
+
+# Database & logs
+*.db
+*.sqlite3
+log.txt
+
+# macOS
+.DS_Store
+
+# Docs build artifacts
+docs_build/
+site/
+site_build/
+docs.zip
+archive.zip
+
+# CI
+.codspeed/
+.netlify/
+.ipynb_checkpoints/

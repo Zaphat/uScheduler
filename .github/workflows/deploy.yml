@@ -1,0 +1,136 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main          # → auto-deploy to dev
+    tags:
+      - "v*.*.*"      # → deploy to staging; prod requires manual approval
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+
+env:
+  AWS_REGION: us-east-1
+
+# ── Shared job defaults ───────────────────────────────────────────────────────
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ── Resolve environment + image tag ──────────────────────────────────────────
+  resolve:
+    name: Resolve deploy target
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.ctx.outputs.environment }}
+      image-tag: ${{ steps.ctx.outputs.image-tag }}
+    steps:
+      - id: ctx
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> "$GITHUB_OUTPUT"
+            echo "image-tag=${{ github.sha }}"                        >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "environment=staging"                                >> "$GITHUB_OUTPUT"
+            echo "image-tag=${{ github.ref_name }}"                   >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=dev"                                    >> "$GITHUB_OUTPUT"
+            echo "image-tag=${{ github.sha }}"                        >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Build & push to ECR ───────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & push (${{ needs.resolve.outputs.environment }})
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.environment }}
+    permissions:
+      id-token: write   # required for OIDC → no long-lived AWS keys stored as secrets
+      contents: read
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push
+        id: push
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ENV: ${{ needs.resolve.outputs.environment }}
+          TAG: ${{ needs.resolve.outputs.image-tag }}
+        run: |
+          IMAGE="${REGISTRY}/uscheduler-${ENV}:${TAG}"
+          docker build --target runtime -t "$IMAGE" ./backend
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  # ── Deploy to dev/staging ─────────────────────────────────────────────────────
+  deploy:
+    name: Deploy → ${{ needs.resolve.outputs.environment }}
+    needs: [resolve, build-and-push]
+    if: needs.resolve.outputs.environment != 'prod'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to ECS
+        env:
+          ENV: ${{ needs.resolve.outputs.environment }}
+          TAG: ${{ needs.resolve.outputs.image-tag }}
+        run: |
+          chmod +x ./deploy/ecs-deploy.sh
+          ./deploy/ecs-deploy.sh "$ENV" "$TAG"
+
+  # ── Deploy to prod (manual approval gate via GitHub Environment protection) ──
+  deploy-prod:
+    name: Deploy → prod
+    needs: [resolve, build-and-push]
+    if: needs.resolve.outputs.environment == 'prod' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # Configure "Required reviewers" on the prod Environment in GitHub repo settings.
+    # GitHub will pause here until an approved reviewer clicks Approve.
+    environment: prod
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to ECS (prod)
+        env:
+          TAG: ${{ needs.resolve.outputs.image-tag }}
+        run: |
+          chmod +x ./deploy/ecs-deploy.sh
+          ./deploy/ecs-deploy.sh prod "$TAG"
