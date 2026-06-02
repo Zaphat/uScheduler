@@ -45,10 +45,7 @@ without a full rewrite.
 | **Web App (Next.js)** | Server-side rendered React app; TypeScript throughout; hosted on AWS Amplify or as a containerised Next.js app behind CloudFront |
 | **Mobile App** | Native iOS/Android app; communicates over the same REST API |
 
-Next.js is chosen because it is the most widely adopted TypeScript-first framework,
-provides SSR for fast initial loads, and its App Router model collocates data-fetching
-with components — reducing the round trips a SPA would need.
-
+Next.js provides SSR for fast initial loads and collocates data-fetching with components.
 Both clients are thin — all business logic lives server-side.
 
 ---
@@ -63,17 +60,13 @@ Both clients are thin — all business logic lives server-side.
 - **Request routing** — routes `/api/v1/*` to the ECS Fargate service via VPC Link
 - **Idempotency key deduplication** — handled in ElastiCache (see §2.5)
 
-HTTP API is preferred over REST API because it has lower latency, lower cost, and
-native JWT authorizer support. The tradeoff (no request/response transformation, no
-API caching built-in) is acceptable for this use case.
+HTTP API is preferred over REST API: lower latency, lower cost, and native JWT authorizer support. The tradeoff (no request/response transformation, no built-in API caching) is acceptable.
 
 ---
 
 ### 2.3 Booking API (Core Service)
 
-A **Python + FastAPI** application deployed as a container on **AWS ECS Fargate**.
-FastAPI is async-native (`asyncio`), which handles concurrent I/O-bound booking requests
-efficiently without threads. This is the single deployable service.
+A **Python + FastAPI** application deployed on **AWS ECS Fargate**. FastAPI's async runtime handles concurrent I/O-bound requests without threads.
 
 | Layer | Responsibility |
 |-------|---------------|
@@ -105,9 +98,7 @@ Key characteristics used:
   configured minimum, so the database handles burst booking traffic without manual
   instance resizing
 
-The API connects via **RDS Proxy**, which pools and multiplexes connections —
-critical because ECS tasks + async workers can otherwise exhaust PostgreSQL's
-max connection limit.
+The API connects via **RDS Proxy** to pool and multiplex connections, preventing PostgreSQL connection exhaustion as task count scales.
 
 ---
 
@@ -121,18 +112,14 @@ max connection limit.
 | **Availability cache** | Hash of free slots per dealership per date | 60 s |
 | **Idempotency cache** | `idem:{customerId}:{key}` → serialised response | 24 h |
 
-ElastiCache Serverless removes the need to provision node types and handles Multi-AZ
-replication automatically. The API connects to ElastiCache within the same VPC;
-no public endpoint is exposed.
+ElastiCache Serverless is managed Multi-AZ Redis with no node provisioning. The API connects within the VPC; no public endpoint is exposed.
 
 ---
 
 ### 2.6 Notification Worker (AWS Lambda + SQS)
 
-When a booking is confirmed, the API publishes a message to an **Amazon SQS** standard
-queue. An **AWS Lambda function** (Python) consumes the queue and sends notifications.
-This is the one genuine separate deployment — it is event-driven, scales to zero when
-idle, and a failure does not affect the booking confirmation.
+On booking confirmation, the API publishes to an **Amazon SQS** queue. A **Lambda function** (Python) consumes it and dispatches notifications.
+It scales to zero when idle, and failures do not affect booking confirmation.
 
 Responsibilities:
 - Send booking confirmation emails via **Amazon SES**
@@ -140,8 +127,7 @@ Responsibilities:
 - SQS dead-letter queue (DLQ) captures messages that fail after 5 attempts for manual
   inspection and replay
 
-SQS is a managed AWS-native service with built-in DLQ, visibility timeout (prevents
-double-processing), and no Redis dependency for the notification path.
+SQS provides built-in DLQ, visibility timeout, and at-least-once delivery with no Redis dependency for the notification path.
 
 ---
 

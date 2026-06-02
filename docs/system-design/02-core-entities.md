@@ -17,7 +17,7 @@ Customer ──owns──► Vehicle
 ## 2. Entity Definitions
 
 ### Customer
-Represents an end user who owns vehicles and makes appointments.
+End user who owns vehicles and makes appointments. Staff and Admin users share this table, differentiated by the `role` field.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -26,12 +26,14 @@ Represents an end user who owns vehicles and makes appointments.
 | `email` | VARCHAR(255) | Unique, used for login and notifications |
 | `phone` | VARCHAR(20) | E.164 format, used for SMS notifications |
 | `password_hash` | VARCHAR(255) | bcrypt hash, never returned in API responses |
+| `role` | VARCHAR(20) | `CUSTOMER` (default) \| `STAFF` \| `ADMIN` |
+| `dealership_id` | UUID FK → Dealership (nullable) | Set for `STAFF` users; null for `CUSTOMER` / `ADMIN` |
 | `created_at` | TIMESTAMPTZ | |
 
 ---
 
 ### Vehicle
-A vehicle owned by a customer that can be brought in for service.
+A vehicle owned by a customer.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -60,11 +62,12 @@ A physical service location with bays and technicians.
 ---
 
 ### ServiceType
-A catalogue of services offered, each with a fixed duration and required technician skills.
+Service catalogue entry with a fixed duration and required technician skills. A null `dealership_id` means the type is available at all dealerships.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | UUID PK | |
+| `dealership_id` | UUID FK → Dealership (nullable) | Null = global service type available at all dealerships |
 | `name` | VARCHAR(100) | e.g. "Full Engine Overhaul" |
 | `description` | TEXT | |
 | `duration_minutes` | INT | Fixed service duration |
@@ -88,7 +91,7 @@ A physical workspace within a dealership. One vehicle at a time.
 ---
 
 ### Technician
-A staff member assigned to appointments. Must have matching skills for the service type.
+Technician assigned to appointments. Skills must match the service type's `required_skills`.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -101,7 +104,7 @@ A staff member assigned to appointments. Must have matching skills for the servi
 ---
 
 ### Appointment
-The central booking record. Created when both a bay and technician are successfully reserved.
+Central booking record, created when a bay and technician are successfully reserved.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -114,7 +117,7 @@ The central booking record. Created when both a bay and technician are successfu
 | `technician_id` | UUID FK → Technician | Assigned during booking |
 | `scheduled_start` | TIMESTAMPTZ | Requested by customer |
 | `scheduled_end` | TIMESTAMPTZ | Computed: `scheduled_start + duration_minutes` |
-| `status` | ENUM | `PENDING`, `CONFIRMED`, `CANCELLED`, `COMPLETED` |
+| `status` | ENUM | `CONFIRMED`, `CANCELLED`, `COMPLETED` |
 | `created_at` | TIMESTAMPTZ | |
 | `updated_at` | TIMESTAMPTZ | |
 | `cancelled_at` | TIMESTAMPTZ | Nullable |
@@ -122,15 +125,17 @@ The central booking record. Created when both a bay and technician are successfu
 #### Status Transitions
 
 ```
-             ┌──────────────────────────────────────────────────┐
-             │                                                  │
-  [request]  ▼                                                  │
-  ──────► PENDING ──[resources found]──► CONFIRMED ──[time passes]──► COMPLETED
-              │                               │
-              │ [no resources / error]        │ [customer cancels]
-              ▼                               ▼
-           FAILED                         CANCELLED
+  [request]
+  ──────► CONFIRMED ──[time passes]──► COMPLETED
+               │
+               │ [customer cancels]
+               ▼
+           CANCELLED
 ```
+
+> **Design note**: Booking attempts that fail (no bay, no technician, or concurrent lock
+> collision) are rejected immediately with a `409` response. No record is persisted for
+> failed attempts.
 
 ---
 

@@ -1,0 +1,54 @@
+# Local development only.
+# All values here are non-secret, dev-only defaults — safe to commit.
+# In dev/staging/prod the app reads from AWS Secrets Manager (ENVIRONMENT != local).
+
+services:
+  api:
+    build:
+      context: .
+      target: dev          # uses the hot-reload dev stage of the Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/uscheduler
+      REDIS_URL: redis://redis:6379/0
+      # Local-only dev secret — never used outside this machine.
+      SECRET_KEY: local-dev-only-secret-key-not-used-in-any-real-env
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      LOG_LEVEL: DEBUG
+      ALLOWED_ORIGINS: '["http://localhost:3000"]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app           # bind-mount source for --reload
+    command: ["sh", "scripts/entrypoint.sh"]
+    restart: on-failure
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: uscheduler
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

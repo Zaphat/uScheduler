@@ -42,7 +42,7 @@ All errors follow a consistent envelope:
 
 ### 1. Check Available Slots
 
-**Purpose**: Let a customer explore availability before committing to a booking.
+**Purpose**: Query available time slots before booking.
 
 ```
 GET /availability
@@ -77,7 +77,7 @@ GET /availability
 
 ### 2. Create Appointment (Book)
 
-**Purpose**: Request and confirm a service appointment.
+**Purpose**: Book a service appointment.
 
 ```
 POST /appointments
@@ -148,7 +148,7 @@ POST /appointments
 
 ### 3. Get Appointment
 
-**Purpose**: Retrieve a single appointment by ID.
+**Purpose**: Retrieve an appointment by ID.
 
 ```
 GET /appointments/:id
@@ -165,7 +165,7 @@ appointment within their dealership.
 
 ### 4. List My Appointments
 
-**Purpose**: Paginated list of the authenticated customer's appointments.
+**Purpose**: List the authenticated customer's appointments (paginated).
 
 ```
 GET /appointments
@@ -221,7 +221,7 @@ PATCH /appointments/:id/cancel
 
 ## Resource Endpoints (Reference / Admin)
 
-These are read-only by customers; write access is restricted to admin roles.
+Read-only for customers; write access requires admin role.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -234,7 +234,7 @@ These are read-only by customers; write access is restricted to admin roles.
 
 ## Authentication
 
-All endpoints require a Bearer JWT issued by the auth service.
+All endpoints require a Bearer JWT.
 
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
