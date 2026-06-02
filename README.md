@@ -14,8 +14,9 @@ Enforces resource constraints (service bay + technician) with a distributed-lock
 5. [CI/CD Pipeline](#cicd-pipeline)
 6. [Deployment](#deployment)
 7. [Running Tests](#running-tests)
-8. [API Overview](#api-overview)
-9. [Project Structure](#project-structure)
+8. [Seed Data & cURL Examples](#seed-data--curl-examples)
+9. [API Overview](#api-overview)
+10. [Project Structure](#project-structure)
 
 ---
 
@@ -70,10 +71,11 @@ The `ENVIRONMENT` environment variable drives the behaviour:
 
 ```bash
 cd backend
-docker compose up --build          # starts API + PostgreSQL + Redis
-docker compose exec api alembic upgrade head
-docker compose exec api python -m scripts.seed
+docker compose up --build
 ```
+
+The container automatically runs migrations and seeds demo data on first start.  
+On subsequent restarts the seed step is skipped.
 
 API: http://localhost:8000  
 Docs: http://localhost:8000/docs
@@ -244,6 +246,128 @@ pytest tests/ -q
 # With coverage
 pytest tests/ --cov=app --cov-report=term-missing
 ```
+
+---
+
+## Seed Data & cURL Examples
+
+After running `python -m scripts.seed` the database contains the following fixed-ID entities — copy-paste the IDs straight into the cURL commands below.
+
+### Seeded entities
+
+| Type | Name | ID |
+|------|------|----|
+| Dealership | Sunrise Auto Service | `d0000000-0000-0000-0000-000000000001` |
+| Service Type | Oil Change (60 min) | `s0000000-0000-0000-0000-000000000001` |
+| Service Type | Tyre Rotation (45 min) | `s0000000-0000-0000-0000-000000000002` |
+| Service Type | Engine Overhaul (240 min) | `s0000000-0000-0000-0000-000000000003` |
+| Customer | Jane Smith `jane@example.com` / `Password123` | `c0000000-0000-0000-0000-000000000001` |
+| Customer | John Doe `john@example.com` / `Password123` | `c0000000-0000-0000-0000-000000000002` |
+| Vehicle | 2021 Toyota Camry (Jane) | `v0000000-0000-0000-0000-000000000001` |
+| Vehicle | 2020 Honda Civic (John) | `v0000000-0000-0000-0000-000000000002` |
+| Appointment | Jane / Camry / Oil Change — 2026-06-20 13:00 UTC (09:00 EDT) | `a0000000-0000-0000-0000-000000000001` |
+| Appointment | John / Civic / Tyre Rotation — 2026-06-20 14:00 UTC (10:00 EDT) | `a0000000-0000-0000-0000-000000000002` |
+| Appointment | Jane / Camry / Engine Overhaul — 2026-06-20 17:00 UTC (13:00 EDT) | `a0000000-0000-0000-0000-000000000003` |
+
+### cURL walkthrough
+
+All requests target `http://localhost:8000/api/v1`. Run these in order — later steps reuse `$TOKEN` and `$APPT_ID` captured earlier.
+
+#### 1. Health check
+
+```bash
+curl -s http://localhost:8000/health | jq
+```
+
+#### 2. Log in as Jane and capture the token
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"jane@example.com","password":"Password123"}' \
+  | jq -r '.access_token')
+echo $TOKEN
+```
+
+#### 3. List dealerships
+
+```bash
+curl -s http://localhost:8000/api/v1/dealerships \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### 4. List service types for the seeded dealership
+
+```bash
+curl -s "http://localhost:8000/api/v1/dealerships/d0000000-0000-0000-0000-000000000001/service-types" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### 5. Check available slots (Oil Change, 2026-06-21)
+
+> The dealership is in `America/New_York` (EDT = UTC-4). Business hours are 08:00–18:00 local time.  
+> Use UTC times offset by +4 h: 09:00 EDT = **13:00 UTC**, 18:00 EDT = **22:00 UTC**.
+
+```bash
+curl -s "http://localhost:8000/api/v1/availability\
+?dealership_id=d0000000-0000-0000-0000-000000000001\
+&service_type_id=s0000000-0000-0000-0000-000000000001\
+&date=2026-06-21" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### 6. Book a new appointment
+
+```bash
+APPT_ID=$(curl -s -X POST http://localhost:8000/api/v1/appointments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "vehicle_id":      "v0000000-0000-0000-0000-000000000001",
+    "dealership_id":   "d0000000-0000-0000-0000-000000000001",
+    "service_type_id": "s0000000-0000-0000-0000-000000000001",
+    "scheduled_start": "2026-06-21T13:00:00Z"
+  }' | jq -r '.id')
+echo $APPT_ID
+```
+
+#### 7. Get a specific appointment
+
+```bash
+# New appointment booked above
+curl -s "http://localhost:8000/api/v1/appointments/$APPT_ID" \
+  -H "Authorization: Bearer $TOKEN" | jq
+
+# Pre-seeded appointment (no booking required)
+curl -s "http://localhost:8000/api/v1/appointments/a0000000-0000-0000-0000-000000000001" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### 8. List Jane's appointments
+
+```bash
+curl -s "http://localhost:8000/api/v1/appointments?page=1&limit=20" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### 9. Cancel an appointment
+
+```bash
+curl -s -X PATCH "http://localhost:8000/api/v1/appointments/$APPT_ID/cancel" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+#### 10. Register a new customer
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alice Brown","email":"alice@example.com","password":"Password123"}' | jq
+```
+
+> The full extended example file is at [backend/docs/curl-examples.md](./backend/docs/curl-examples.md).  
+> Interactive Swagger UI: **http://localhost:8000/docs**
 
 ---
 

@@ -7,6 +7,7 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -e ".[dev]"
 # Source is bind-mounted at runtime; no COPY needed.
+# The default CMD is overridden by docker-compose to scripts/entrypoint.sh.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 
