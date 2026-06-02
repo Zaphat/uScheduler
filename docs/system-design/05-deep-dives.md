@@ -4,9 +4,7 @@
 
 ### The Problem
 
-Two customers simultaneously request the same bay + technician + timeslot. Both execute
-the availability query at the same millisecond and both see the slot as free. Without a
-guard, both writes succeed and a double-booking occurs.
+Two customers request the same bay + technician + timeslot simultaneously. Both see the slot as free, and both writes succeed — causing a double-booking.
 
 ### Three-Layer Defence
 
@@ -20,8 +18,7 @@ Layer 3: DB Unique/Exclusion Constraint ← final backstop, never relies on app 
 
 #### Layer 1 — Redis Distributed Lock
 
-After selecting a candidate bay and technician, the service acquires two locks before
-touching the database:
+After selecting a bay and technician, the service acquires two locks before writing:
 
 ```
 SET lock:bay:{bayId}:{slotKey}   {requestId}  NX  PX 30000
@@ -35,8 +32,7 @@ SET lock:tech:{techId}:{slotKey} {requestId}  NX  PX 30000
 
 If either lock fails, return `409 SLOT_UNAVAILABLE`. No DB write happens.
 
-**Lock release** — always happens in a `finally` block, even on error, using the stored
-`{requestId}` to ensure only the lock owner can delete it:
+**Lock release** — always in a `finally` block, even on error. The stored `{requestId}` ensures only the lock owner can delete it:
 
 ```lua
 -- Lua script executed atomically in Redis
@@ -47,13 +43,13 @@ else
 end
 ```
 
-This is the standard Redlock pattern for a single-node Redis.
+This follows the Redlock pattern for single-node Redis.
 
 ---
 
 #### Layer 2 — DB Transaction with Re-Check
 
-Inside the transaction, before inserting, the service re-runs the overlap query:
+Before inserting, the service re-runs the overlap query inside the transaction:
 
 ```sql
 SELECT 1
@@ -65,19 +61,15 @@ WHERE  service_bay_id = $1
 LIMIT  1;
 ```
 
-If a row is found, the transaction is rolled back and `409` is returned. The Redis lock
-is then released.
+If overlap is found, the transaction rolls back, locks are released, and `409` is returned.
 
-This re-check catches the edge case where:
-- Two requests target different bays but one bay lookup falls through due to timing
-- The Redis lock TTL expired during a slow DB operation
+This catches edge cases where the Redis lock TTL expired during a slow DB operation, or a timing race slipped through after the availability check.
 
 ---
 
 #### Layer 3 — PostgreSQL Partial Unique / Exclusion Constraint
 
-As a final backstop, a `DEFERRABLE` exclusion constraint is added using the
-`btree_gist` extension:
+As a final backstop, a `DEFERRABLE` exclusion constraint (using `btree_gist`) prevents conflicting INSERTs at the DB level:
 
 ```sql
 ALTER TABLE appointments
@@ -89,10 +81,7 @@ ALTER TABLE appointments
   WHERE (status = 'CONFIRMED');
 ```
 
-If any bug in the application layer still produces a conflicting INSERT, PostgreSQL
-raises a constraint violation, the transaction rolls back, and the error propagates as
-a `500` with a CloudWatch Alarm firing. This should never trigger in production — its
-existence makes the system provably correct regardless of application bugs.
+If a conflicting INSERT reaches PostgreSQL, the constraint raises a violation and the transaction rolls back. This should never trigger in production — it is a correctness guarantee regardless of application bugs.
 
 ---
 
@@ -109,11 +98,10 @@ Time →    T1                                T2
  140ms    INSERT appointment
  145ms    COMMIT
  150ms    RELEASE lock
- 155ms    Return 201 ✓
+ 155ms    Return 201
 ```
 
-Request T2 is rejected cleanly at the lock layer. Bay 3 has exactly one confirmed
-appointment.
+T2 is rejected at the lock layer. Bay 3 has exactly one confirmed appointment.
 
 ---
 
@@ -121,8 +109,7 @@ appointment.
 
 ### The Overlap Query
 
-Finding a free slot for a time window `[start, end)` means finding a resource that has
-**no** confirmed appointment whose interval overlaps `[start, end)`.
+Finding a free slot means finding a resource with no confirmed appointment overlapping `[start, end)`.
 
 Two intervals `[a, b)` and `[c, d)` overlap when `a < d AND b > c`.
 The **non**-overlap condition is `b ≤ c OR a ≥ d`.
@@ -180,9 +167,7 @@ scan of the `appointments` table.
 
 ### Available Slots Enumeration (GET /availability)
 
-To list all available start times for a given day, the service generates candidate
-30-minute slots within the dealership's operating hours, then filters out any slot where
-**zero** bays or **zero** qualified technicians are free.
+To list available start times, the service generates candidate slots within the dealership's operating hours and filters out any slot with no free bay or qualified technician.
 
 ```
 operating_hours = dealership.opening_time → dealership.closing_time
@@ -242,16 +227,13 @@ or agent needed. Every HTTP request and booking attempt emits:
 }
 ```
 
-CloudWatch Log Insights queries let the support team filter by `customer_id`,
-`dealership_id`, or `outcome` without leaving the AWS console.
+CloudWatch Log Insights allows filtering by `customer_id`, `dealership_id`, or `outcome`.
 
 ---
 
 #### Metrics (Prometheus → Grafana)
 
-The FastAPI app exposes a `/metrics` endpoint via
-`prometheus-fastapi-instrumentator`. **Prometheus** scrapes this endpoint on a
-configurable interval and stores time-series data.
+The FastAPI app exposes `/metrics` via `prometheus-fastapi-instrumentator`. Prometheus scrapes it on a configurable interval and stores time-series data.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
@@ -273,9 +255,7 @@ configurable interval and stores time-series data.
 
 ## Deep Dive 4 — Idempotency
 
-A client that does not receive a response (network timeout) may retry. Without
-idempotency, the retry could create a second confirmed appointment for the same customer
-at the same time.
+A client that times out may retry. Without idempotency, the retry could create a duplicate booking.
 
 ### Implementation
 
@@ -285,12 +265,9 @@ at the same time.
 3. On a miss, booking proceeds normally. The confirmed response is stored in
    ElastiCache with TTL = 24 h before returning to the client.
 
-> **Why in the API rather than the gateway?** AWS API Gateway HTTP API does not
-> natively cache responses by a custom header. Handling it in the FastAPI service
-> keeps the logic visible and testable.
+> **Why in the API rather than the gateway?** API Gateway HTTP API does not natively cache responses by a custom header. Handling it in FastAPI keeps the logic visible and testable.
 
-The key is scoped to the authenticated customer (the JWT `sub` claim is part of the
-Redis key) so one customer cannot observe or replay another customer's idempotency key.
+The key is scoped to the authenticated customer (JWT `sub`), preventing cross-customer replay.
 
 ```
 key format: idempotency:{customerId}:{idempotency-key-header-value}

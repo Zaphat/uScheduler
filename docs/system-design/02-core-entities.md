@@ -17,7 +17,7 @@ Customer ──owns──► Vehicle
 ## 2. Entity Definitions
 
 ### Customer
-Represents an end user who owns vehicles and makes appointments. Staff and Admin users are also stored in this table, differentiated by the `role` field.
+End user who owns vehicles and makes appointments. Staff and Admin users share this table, differentiated by the `role` field.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -33,7 +33,7 @@ Represents an end user who owns vehicles and makes appointments. Staff and Admin
 ---
 
 ### Vehicle
-A vehicle owned by a customer that can be brought in for service.
+A vehicle owned by a customer.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -62,7 +62,7 @@ A physical service location with bays and technicians.
 ---
 
 ### ServiceType
-A catalogue of services, each with a fixed duration and required technician skills. Service types may be scoped to a specific dealership or shared globally (nullable dealership).
+Service catalogue entry with a fixed duration and required technician skills. A null `dealership_id` means the type is available at all dealerships.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -91,7 +91,7 @@ A physical workspace within a dealership. One vehicle at a time.
 ---
 
 ### Technician
-A staff member assigned to appointments. Must have matching skills for the service type.
+Technician assigned to appointments. Skills must match the service type's `required_skills`.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -104,7 +104,7 @@ A staff member assigned to appointments. Must have matching skills for the servi
 ---
 
 ### Appointment
-The central booking record. Created when both a bay and technician are successfully reserved.
+Central booking record, created when a bay and technician are successfully reserved.
 
 | Field | Type | Notes |
 |-------|------|-------|

@@ -56,7 +56,7 @@ Internet → ALB → ECS Fargate (uscheduler-api) → Aurora PostgreSQL + Elasti
 | `local`   | `docker compose up`              | docker-compose env vars | —        |
 | `dev`     | Push to `main`                   | AWS Secrets Manager    | Auto     |
 | `staging` | Git tag `v*.*.*`                 | AWS Secrets Manager    | Auto     |
-| `prod`    | Git tag `v*.*.*` (after staging) | AWS Secrets Manager    | Manual ✋ |
+| `prod`    | Git tag `v*.*.*` (after staging) | AWS Secrets Manager    | Manual|
 
 The `ENVIRONMENT` environment variable drives the behaviour:
 - `local` → no AWS call; values come directly from the process environment.
@@ -163,7 +163,7 @@ Every push / PR
 
 Push to main  →  deploy.yml  →  build & push ECR  →  ECS deploy (dev)   [auto]
 Tag v*.*.*    →  deploy.yml  →  build & push ECR  →  ECS deploy (staging) [auto]
-                                                   →  ECS deploy (prod)   [manual approval ✋]
+                                                   →  ECS deploy (prod)   [manual approval]
 ```
 
 **One-time GitHub repo setup:**
@@ -233,15 +233,12 @@ aws ecs register-task-definition --cli-input-json file:///tmp/td-dev.json
 
 ## Running Tests
 
-No external services required — tests use SQLite in-memory + fakeredis.
 
 ```bash
 cd backend
 pip install -e ".[dev]"
 pytest tests/ -q
 ```
-
-Expected: **37 passed**.
 
 ```bash
 # With coverage
