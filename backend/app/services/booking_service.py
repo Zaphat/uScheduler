@@ -1,36 +1,44 @@
 """Core booking service — orchestrates availability check, locking, and DB write."""
 import zoneinfo
-from datetime import datetime, time, timezone, timedelta
+from datetime import datetime, date as date_type, time, timezone, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import SlotUnavailableError, NotFoundError, ForbiddenError
-from app.core.locks import acquire_slot_locks
+from app.core.locks import acquire_slot_locks, get_redis
+from app.core.notifications import publish_booking_confirmation
 from app.models.models import Appointment
 from app.repositories.appointment_repo import AppointmentRepository, ReferenceRepository
 from app.schemas.schemas import AppointmentCreate
 
+_IDEMPOTENCY_TTL_S = 86_400  # 24 hours
 
-def _slot_key(dt: datetime) -> str:
+
+def _slot_key(dt: datetime, duration_minutes: int = 15) -> str:  # noqa: ARG001
     """Bucket start time to 15-min granularity for lock key."""
     bucket = int(dt.timestamp() // (15 * 60))
     return str(bucket)
 
 
-def _within_hours(dt: datetime, opening: str, closing: str, tz: str) -> bool:
-    """Check that dt falls within dealership operating hours (local time)."""
+def _within_hours(start: datetime, end: datetime, opening: str, closing: str, tz: str) -> bool:
+    """Check that [start, end) falls entirely within dealership operating hours (local time)."""
     try:
         zone = zoneinfo.ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         return True  # graceful fallback if tz unknown
 
-    local = dt.astimezone(zone)
-    local_time = local.time()
-
     open_h, open_m = map(int, opening.split(":"))
     close_h, close_m = map(int, closing.split(":"))
-    return time(open_h, open_m) <= local_time < time(close_h, close_m)
+    open_time = time(open_h, open_m)
+    close_time = time(close_h, close_m)
+
+    local_start = start.astimezone(zone).time()
+    local_end = end.astimezone(zone).time()
+    # local_end of 00:00 means midnight — treat as closing
+    if local_end == time(0, 0):
+        local_end = time(23, 59, 59)
+    return open_time <= local_start and local_end <= close_time
 
 
 class BookingService:
@@ -43,7 +51,16 @@ class BookingService:
         self,
         payload: AppointmentCreate,
         customer_id: str,
+        idempotency_key: str | None = None,
     ) -> Appointment:
+        # ── 0. Idempotency check ────────────────────────────────────────
+        if idempotency_key:
+            cached_id = await get_redis().get(f"idem:{customer_id}:{idempotency_key}")
+            if cached_id:
+                cached = await self.appt_repo.get_by_id(cached_id)
+                if cached:
+                    return cached
+
         # ── 1. Validate references ──────────────────────────────────────
         customer = await self.ref_repo.get_customer(customer_id)
         if not customer:
@@ -67,7 +84,7 @@ class BookingService:
         end = start + timedelta(minutes=service_type.duration_minutes)
 
         # ── 2. Operating hours ──────────────────────────────────────────
-        if not _within_hours(start, dealership.opening_time, dealership.closing_time, dealership.timezone):
+        if not _within_hours(start, end, dealership.opening_time, dealership.closing_time, dealership.timezone):
             raise SlotUnavailableError(
                 "Requested time is outside dealership operating hours.",
                 {"requested_start": start.isoformat()},
@@ -91,7 +108,7 @@ class BookingService:
             )
 
         # ── 4. Distributed lock + DB transaction ────────────────────────
-        slot_key = _slot_key(start)
+        slot_key = _slot_key(start, service_type.duration_minutes)
 
         async with acquire_slot_locks(bay.id, tech.id, slot_key):
             # Re-check inside transaction (defence-in-depth)
@@ -120,13 +137,31 @@ class BookingService:
             created = await self.appt_repo.create(appt)
             await self.session.commit()
 
+        # ── 5. Post-commit side-effects ─────────────────────────────────
+        await publish_booking_confirmation(created.id)
+
+        if idempotency_key:
+            await get_redis().set(
+                f"idem:{customer_id}:{idempotency_key}",
+                created.id,
+                ex=_IDEMPOTENCY_TTL_S,
+            )
+
         return created
 
-    async def get_appointment(self, appointment_id: str, customer_id: str, role: str) -> Appointment:
+    async def get_appointment(
+        self,
+        appointment_id: str,
+        customer_id: str,
+        role: str,
+        dealership_id: str | None = None,
+    ) -> Appointment:
         appt = await self.appt_repo.get_by_id(appointment_id)
         if not appt:
             raise NotFoundError("Appointment")
         if role == "CUSTOMER" and appt.customer_id != customer_id:
+            raise ForbiddenError()
+        if role == "STAFF" and appt.dealership_id != dealership_id:
             raise ForbiddenError()
         return appt
 
@@ -138,7 +173,7 @@ class BookingService:
             raise ForbiddenError()
         if appt.status != "CONFIRMED":
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": {"code": "INVALID_STATE", "message": f"Cannot cancel an appointment with status {appt.status}.", "details": {}}},
             )
         now = datetime.now(timezone.utc)
@@ -172,8 +207,6 @@ class BookingService:
         service_type_id: str,
         date_str: str,
     ) -> list[tuple[datetime, datetime]]:
-        from datetime import date as date_type
-
         dealership = await self.ref_repo.get_dealership(dealership_id)
         if not dealership:
             raise NotFoundError("Dealership")
@@ -199,8 +232,38 @@ class BookingService:
         current = datetime(query_date.year, query_date.month, query_date.day, open_h, open_m, tzinfo=zone)
         closing = datetime(query_date.year, query_date.month, query_date.day, close_h, close_m, tzinfo=zone)
 
+        # Fetch all resources and the day's appointments in 3 queries instead of
+        # 2 × N queries (one per candidate slot).
+        bays = await self.appt_repo.list_active_bays(dealership_id)
+        techs = await self.appt_repo.list_active_technicians(dealership_id)
+
+        # Filter technicians by skill in Python (keeps SQLite test compat)
+        required = service_type.required_skills or []
+        qualified_tech_ids = {
+            t.id for t in techs
+            if not required or all(s in (t.skills or []) for s in required)
+        }
+
+        if not bays or not qualified_tech_ids:
+            return []
+
+        bay_ids = {b.id for b in bays}
+
+        # One query covering the whole operating day
+        day_appointments = await self.appt_repo.list_confirmed_appointments_in_window(
+            dealership_id,
+            current.astimezone(timezone.utc),
+            closing.astimezone(timezone.utc),
+        )
+
         slots: list[tuple[datetime, datetime]] = []
         now = datetime.now(timezone.utc)
+
+        def _to_utc(dt: datetime) -> datetime:
+            """Ensure datetime is UTC-aware; SQLite returns naive datetimes."""
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
 
         while current + slot_dur <= closing:
             slot_end = current + slot_dur
@@ -208,13 +271,22 @@ class BookingService:
             end_utc = slot_end.astimezone(timezone.utc)
 
             if start_utc > now:
-                bay = await self.appt_repo.find_available_bay(dealership_id, start_utc, end_utc)
-                if bay:
-                    tech = await self.appt_repo.find_available_technician(
-                        dealership_id, start_utc, end_utc, service_type.required_skills
-                    )
-                    if tech:
-                        slots.append((start_utc, end_utc))
+                # Which bays/techs are occupied during this slot?
+                occupied_bays = {
+                    a.service_bay_id for a in day_appointments
+                    if _to_utc(a.scheduled_start) < end_utc and _to_utc(a.scheduled_end) > start_utc
+                }
+                occupied_techs = {
+                    a.technician_id for a in day_appointments
+                    if _to_utc(a.scheduled_start) < end_utc and _to_utc(a.scheduled_end) > start_utc
+                }
+
+                free_bay = bay_ids - occupied_bays
+                free_tech = qualified_tech_ids - occupied_techs
+
+                if free_bay and free_tech:
+                    slots.append((start_utc, end_utc))
+
             current += slot_dur
 
         return slots

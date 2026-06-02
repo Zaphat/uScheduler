@@ -1,8 +1,40 @@
+import json
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Boolean, ForeignKey, DateTime, Integer, SmallInteger, Text, JSON
+from sqlalchemy import String, Boolean, ForeignKey, DateTime, Integer, SmallInteger, Text, TypeDecorator, types as sa_types
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.session import Base
+
+
+class ArrayOfString(TypeDecorator):
+    """Stores list[str] as PostgreSQL ARRAY(String) or JSON text on other dialects.
+
+    This allows the same ORM model to work against both production PostgreSQL
+    and the SQLite in-memory database used in unit tests.
+    """
+
+    impl = sa_types.Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import ARRAY
+            return dialect.type_descriptor(ARRAY(String))
+        return dialect.type_descriptor(sa_types.Text())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name != "postgresql":
+            return json.dumps(value)
+        return value  # asyncpg handles list → pg array natively
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return []
+        if dialect.name != "postgresql" and isinstance(value, str):
+            return json.loads(value)
+        return value
 
 
 def _uuid() -> str:
@@ -64,7 +96,7 @@ class ServiceType(Base):
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str | None] = mapped_column(Text)
     duration_minutes: Mapped[int] = mapped_column(Integer)
-    required_skills: Mapped[list] = mapped_column(JSON, default=list)
+    required_skills: Mapped[list] = mapped_column(ArrayOfString, default=list)
 
     appointments: Mapped[list["Appointment"]] = relationship(back_populates="service_type")
 
@@ -87,7 +119,7 @@ class Technician(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     dealership_id: Mapped[str] = mapped_column(String(36), ForeignKey("dealerships.id"), index=True)
     name: Mapped[str] = mapped_column(String(100))
-    skills: Mapped[list] = mapped_column(JSON, default=list)
+    skills: Mapped[list] = mapped_column(ArrayOfString, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     dealership: Mapped["Dealership"] = relationship(back_populates="technicians")

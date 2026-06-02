@@ -56,6 +56,12 @@ def upgrade() -> None:
         sa.Column("duration_minutes", sa.Integer(), nullable=False),
         sa.Column("required_skills", postgresql.ARRAY(sa.String()), nullable=False, server_default="{}"),
     )
+    op.create_index(
+        "ix_service_types_required_skills",
+        "service_types",
+        ["required_skills"],
+        postgresql_using="gin",
+    )
 
     op.create_table(
         "service_bays",
@@ -75,6 +81,12 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
     )
     op.create_index("ix_technicians_dealership_id", "technicians", ["dealership_id"])
+    op.create_index(
+        "ix_technicians_skills",
+        "technicians",
+        ["skills"],
+        postgresql_using="gin",
+    )
 
     op.create_table(
         "appointments",
@@ -108,8 +120,23 @@ def upgrade() -> None:
         ["technician_id", "status", "scheduled_start", "scheduled_end"],
     )
 
+    # Layer 3 double-booking backstop: exclusion constraint via btree_gist
+    op.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
+    op.execute(
+        """
+        ALTER TABLE appointments
+          ADD CONSTRAINT no_double_bay_booking
+          EXCLUDE USING gist (
+            service_bay_id WITH =,
+            tstzrange(scheduled_start, scheduled_end, '[)') WITH &&
+          )
+          WHERE (status = 'CONFIRMED')
+        """
+    )
+
 
 def downgrade() -> None:
+    op.execute("ALTER TABLE appointments DROP CONSTRAINT IF EXISTS no_double_bay_booking")
     op.drop_table("appointments")
     op.drop_table("technicians")
     op.drop_table("service_bays")

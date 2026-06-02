@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_customer
@@ -35,9 +35,14 @@ async def create_appointment(
     payload: AppointmentCreate,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_customer),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ):
     service = BookingService(db)
-    appt = await service.create_appointment(payload, customer_id=user["sub"])
+    appt = await service.create_appointment(
+        payload,
+        customer_id=user["sub"],
+        idempotency_key=x_idempotency_key,
+    )
     return appt
 
 
@@ -64,7 +69,12 @@ async def get_appointment(
     user: dict = Depends(require_customer),
 ):
     service = BookingService(db)
-    return await service.get_appointment(appointment_id, user["sub"], user.get("role", "CUSTOMER"))
+    return await service.get_appointment(
+        appointment_id,
+        user["sub"],
+        user.get("role", "CUSTOMER"),
+        dealership_id=user.get("dealership_id"),
+    )
 
 
 @router.patch("/appointments/{appointment_id}/cancel", response_model=AppointmentCancelOut)

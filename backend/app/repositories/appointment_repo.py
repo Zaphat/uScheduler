@@ -146,6 +146,43 @@ class AppointmentRepository:
         await self.session.flush()
         return appt
 
+    # ── Batched availability helpers (used by check_availability) ─────────
+
+    async def list_active_bays(self, dealership_id: str) -> list[ServiceBay]:
+        result = await self.session.execute(
+            select(ServiceBay).where(
+                ServiceBay.dealership_id == dealership_id,
+                ServiceBay.is_active.is_(True),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def list_active_technicians(self, dealership_id: str) -> list[Technician]:
+        result = await self.session.execute(
+            select(Technician).where(
+                Technician.dealership_id == dealership_id,
+                Technician.is_active.is_(True),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def list_confirmed_appointments_in_window(
+        self,
+        dealership_id: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> list[Appointment]:
+        """Return all CONFIRMED appointments for a dealership that overlap [window_start, window_end)."""
+        result = await self.session.execute(
+            select(Appointment).where(
+                Appointment.dealership_id == dealership_id,
+                Appointment.status == "CONFIRMED",
+                Appointment.scheduled_start < window_end,
+                Appointment.scheduled_end > window_start,
+            )
+        )
+        return list(result.scalars().all())
+
 
 class ReferenceRepository:
     def __init__(self, session: AsyncSession):

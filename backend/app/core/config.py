@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
 
+    # AWS / SQS
+    AWS_REGION: str = "us-east-1"
+    # Optional — when set, booking confirmations are published to this queue.
+    # Leave unset in local/test environments.
+    SQS_BOOKING_QUEUE_URL: str | None = None
+
     # Set to true in test fixtures; disables AWS SM call (handled above).
     TESTING: bool = False
 

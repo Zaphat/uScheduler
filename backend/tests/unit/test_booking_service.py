@@ -13,23 +13,35 @@ from app.core.exceptions import SlotUnavailableError, ForbiddenError, NotFoundEr
 class TestWithinHours:
     def test_within_hours_returns_true(self):
         dt = datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
-        assert _within_hours(dt, "08:00", "18:00", "UTC") is True
+        end = dt + timedelta(hours=1)
+        assert _within_hours(dt, end, "08:00", "18:00", "UTC") is True
 
     def test_before_opening_returns_false(self):
         dt = datetime(2026, 6, 15, 7, 0, tzinfo=timezone.utc)
-        assert _within_hours(dt, "08:00", "18:00", "UTC") is False
+        end = dt + timedelta(hours=1)
+        assert _within_hours(dt, end, "08:00", "18:00", "UTC") is False
 
     def test_at_closing_returns_false(self):
+        # start at 18:00, end at 19:00 — end exceeds closing
         dt = datetime(2026, 6, 15, 18, 0, tzinfo=timezone.utc)
-        assert _within_hours(dt, "08:00", "18:00", "UTC") is False
+        end = dt + timedelta(hours=1)
+        assert _within_hours(dt, end, "08:00", "18:00", "UTC") is False
 
     def test_exactly_at_opening_returns_true(self):
         dt = datetime(2026, 6, 15, 8, 0, tzinfo=timezone.utc)
-        assert _within_hours(dt, "08:00", "18:00", "UTC") is True
+        end = dt + timedelta(hours=1)
+        assert _within_hours(dt, end, "08:00", "18:00", "UTC") is True
+
+    def test_end_exceeds_closing_returns_false(self):
+        # start OK but end time crosses closing
+        dt = datetime(2026, 6, 15, 17, 30, tzinfo=timezone.utc)
+        end = dt + timedelta(hours=1)  # end = 18:30, closing = 18:00
+        assert _within_hours(dt, end, "08:00", "18:00", "UTC") is False
 
     def test_unknown_timezone_returns_true(self):
         dt = datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
-        assert _within_hours(dt, "08:00", "18:00", "Not/ATimezone") is True
+        end = dt + timedelta(hours=1)
+        assert _within_hours(dt, end, "08:00", "18:00", "Not/ATimezone") is True
 
 
 # ── _slot_key ──────────────────────────────────────────────────────────────
@@ -200,7 +212,7 @@ class TestBookingServiceCancel:
         await service.cancel_appointment(appt.id, seed_data["customer_id"])
         with pytest.raises(HTTPException) as exc_info:
             await service.cancel_appointment(appt.id, seed_data["customer_id"])
-        assert exc_info.value.status_code == 409
+        assert exc_info.value.status_code == 400
 
 
 @pytest.mark.asyncio
