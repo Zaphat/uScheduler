@@ -42,13 +42,14 @@ class AppointmentRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def find_available_technician(
+    async def find_qualified_technician(
         self,
         dealership_id: str,
         start: datetime,
         end: datetime,
         required_skills: list[str],
     ) -> Technician | None:
+        """Find a technician who is both qualified and available."""
         conflict = (
             select(Appointment.id)
             .where(

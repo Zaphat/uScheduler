@@ -103,6 +103,8 @@ class BookingService:
             service_type = await self.ref_repo.get_service_type(payload.service_type_id)
             if not service_type:
                 raise NotFoundError("ServiceType")
+            if service_type.dealership_id and service_type.dealership_id != payload.dealership_id:
+                raise NotFoundError("ServiceType")
 
             start = payload.scheduled_start
             end = start + timedelta(minutes=service_type.duration_minutes)
@@ -122,7 +124,7 @@ class BookingService:
                     {"requested_start": start.isoformat(), "requested_end": end.isoformat(), "reason": "NO_BAY"},
                 )
 
-            tech = await self.appt_repo.find_available_technician(
+            tech = await self.appt_repo.find_qualified_technician(
                 payload.dealership_id, start, end, service_type.required_skills
             )
             if not tech:
@@ -269,6 +271,8 @@ class BookingService:
             service_type = await self.ref_repo.get_service_type(service_type_id)
             if not service_type:
                 raise NotFoundError("ServiceType")
+            if service_type.dealership_id and service_type.dealership_id != dealership_id:
+                raise NotFoundError("ServiceType")
 
             try:
                 query_date = date_type.fromisoformat(date_str)
@@ -336,10 +340,10 @@ class BookingService:
                         if _to_utc(a.scheduled_start) < end_utc and _to_utc(a.scheduled_end) > start_utc
                     }
 
-                    free_bay = bay_ids - occupied_bays
-                    free_tech = qualified_tech_ids - occupied_techs
+                    free_bays = bay_ids - occupied_bays
+                    free_qualified_techs = qualified_tech_ids - occupied_techs
 
-                    if free_bay and free_tech:
+                    if free_bays and free_qualified_techs:
                         slots.append((start_utc, end_utc))
 
                 current += slot_dur

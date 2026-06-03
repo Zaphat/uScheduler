@@ -181,6 +181,54 @@ class TestBookingServiceCreate:
         with pytest.raises(SlotUnavailableError):
             await service.create_appointment(payload, customer_id=seed_data["customer_id"])
 
+    async def test_no_qualified_technician_raises_slot_unavailable(self, db_session, seed_data):
+        """Booking is rejected when the only technician lacks required skills."""
+        from app.models.models import ServiceType
+        # Create a service type requiring skills the existing tech doesn't have
+        advanced = ServiceType(
+            id="st-engine-01",
+            name="Engine Overhaul",
+            duration_minutes=60,
+            required_skills=["engine", "electrical"],
+            dealership_id=seed_data["dealership_id"],
+        )
+        db_session.add(advanced)
+        await db_session.commit()
+
+        service = BookingService(db_session)
+        payload = AppointmentCreate(
+            vehicle_id=seed_data["vehicle_id"],
+            dealership_id=seed_data["dealership_id"],
+            service_type_id="st-engine-01",
+            scheduled_start=future_dt(200),
+        )
+        with pytest.raises(SlotUnavailableError, match="qualified technician"):
+            await service.create_appointment(payload, customer_id=seed_data["customer_id"])
+
+    async def test_service_type_scoped_to_other_dealership_raises_not_found(self, db_session, seed_data):
+        """Booking is rejected when the service type belongs to a different dealership."""
+        from app.models.models import Dealership, ServiceType
+        other = Dealership(id="d-other-01", name="Other Dealership", timezone="UTC", opening_time="08:00", closing_time="18:00")
+        scoped = ServiceType(
+            id="st-other-01",
+            name="Detailing",
+            duration_minutes=60,
+            required_skills=[],
+            dealership_id="d-other-01",
+        )
+        db_session.add_all([other, scoped])
+        await db_session.commit()
+
+        service = BookingService(db_session)
+        payload = AppointmentCreate(
+            vehicle_id=seed_data["vehicle_id"],
+            dealership_id=seed_data["dealership_id"],
+            service_type_id="st-other-01",
+            scheduled_start=future_dt(224),
+        )
+        with pytest.raises(NotFoundError):
+            await service.create_appointment(payload, customer_id=seed_data["customer_id"])
+
 
 @pytest.mark.asyncio
 class TestBookingServiceCancel:
